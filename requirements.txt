@@ -3,3 +3,5 @@ numpy
 pillow
 mysql-connector-python
 tk
+flask
+gunicorn
