@@ -3,3 +3,4 @@ gunicorn
 opencv-contrib-python
 numpy
 pillow
+opencv-contrib-python
