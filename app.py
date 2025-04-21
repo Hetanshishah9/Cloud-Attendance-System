@@ -1,50 +1,46 @@
-from flask import Flask, request, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, Response
 import os
-import cv2
-import numpy as np
-from PIL import Image
+from camera import VideoCamera
+from mark_attendance import mark_attendance
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)
 
 @app.route('/')
 def index():
-    return "Cloud Attendance System is running!"
+    return render_template('login.html')
 
-@app.route('/train', methods=['POST'])
-def train_model():
-    # You can use LBPHFaceRecognizer or FisherFaceRecognizer
-    # Uncomment the one you are using, but ensure opencv-contrib-python is installed
+@app.route('/login', methods=['POST'])
+def login():
+    username = request.form['username']
+    password = request.form['password']
+    if username == 'admin' and password == 'password':
+        session['user'] = username
+        return redirect(url_for('dashboard'))
+    return 'Invalid credentials'
 
-    # recognizer = cv2.face.LBPHFaceRecognizer_create()
-    recognizer = cv2.face.FisherFaceRecognizer_create()
-    detector = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
+@app.route('/dashboard')
+def dashboard():
+    if 'user' in session:
+        return render_template('dashboard.html')
+    return redirect(url_for('index'))
 
-    def getImagesAndLabels(path):
-        imagePaths = [os.path.join(path, f) for f in os.listdir(path)]
-        faceSamples = []
-        Ids = []
-        for imagePath in imagePaths:
-            pilImage = Image.open(imagePath).convert('L')
-            imageNp = np.array(pilImage, 'uint8')
-            Id = int(os.path.split(imagePath)[-1].split(".")[1])
-            faces = detector.detectMultiScale(imageNp)
-            for (x, y, w, h) in faces:
-                faceSamples.append(imageNp[y:y + h, x:x + w])
-                Ids.append(Id)
-        return faceSamples, Ids
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    return redirect(url_for('index'))
 
-    faces, Ids = getImagesAndLabels('TrainingImage')
-    recognizer.train(faces, np.array(Ids))
-    if not os.path.exists('TrainingImageLabel'):
-        os.makedirs('TrainingImageLabel')
-    recognizer.save('TrainingImageLabel/trainner.yml')
+@app.route('/video_feed')
+def video_feed():
+    return Response(gen(VideoCamera()), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-    return jsonify({"status": "Training complete"})
+def gen(camera):
+    while True:
+        frame = camera.get_frame()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n\r\n')
+        mark_attendance(camera.name)
 
-@app.route('/recognize', methods=['POST'])
-def recognize():
-    os.system('python AMS_Run.py')
-    return jsonify({"status": "Recognition started"})
-
+# Only include this for local development/testing
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    app.run(debug=True)
